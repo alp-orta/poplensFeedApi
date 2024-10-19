@@ -1,0 +1,6 @@
+@poplens_backend_HostAddress = http://localhost:5015
+
+GET {{poplens_backend_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
