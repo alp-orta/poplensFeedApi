@@ -1,0 +1,15 @@
+﻿﻿**.user
+*.vs/
+*.suo
+.env
+bin/
+*.dll
+*.exe
+*.pdb
+*.generated.cs
+packages/
+Thumbs.db     
+*.log 
+obj/
+/appsettings.json
+/appsettings.development.json
