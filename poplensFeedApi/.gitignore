@@ -13,3 +13,4 @@ Thumbs.db
 obj/
 /appsettings.json
 /appsettings.development.json
+.vs

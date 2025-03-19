@@ -1,82 +1,101 @@
 ﻿using poplensFeedApi.Contracts;
-using poplensFeedApi.Controllers;
+using poplensFeedApi.Models;
 using poplensFeedApi.Models.Common;
 using poplensMediaApi.Models;
 using poplensUserProfileApi.Models;
 
 namespace poplensFeedApi.Services {
     public class FeedService : IFeedService {
-        private readonly IHttpClientFactory _httpClientFactory;
-        private readonly string _userProfileApiUrl = "https://localhost:7056/api/";
-        private readonly MediaApiProxyController _mediaApiProxyController;
+        private readonly IUserProfileApiProxyService _userProfileApiProxyService;
+        private readonly IMediaApiProxyService _mediaApiProxyService;
 
-        public FeedService(IHttpClientFactory httpClientFactory) {
-            _httpClientFactory = httpClientFactory;
-            _mediaApiProxyController = _mediaApiProxyController;
+        public FeedService(IUserProfileApiProxyService userProfileApiProxyService, IMediaApiProxyService mediaApiProxyService) {
+            _userProfileApiProxyService = userProfileApiProxyService;
+            _mediaApiProxyService = mediaApiProxyService;
         }
 
-        public async Task<PageResult<ReviewDetail>> GetFollowerFeedAsync(string profileId, int page = 1, int pageSize = 10) {
-            var response = new PageResult<ReviewDetail> {
+        public async Task<PageResult<ReviewProfileDetail>> GetFollowerFeedAsync(string profileId, string token, int page = 1, int pageSize = 10) {
+            var response = new PageResult<ReviewProfileDetail> {
                 Page = page,
                 PageSize = pageSize,
                 TotalCount = 0,
-                Result = new List<ReviewDetail>()
+                Result = new List<ReviewProfileDetail>()
             };
-            var client = _httpClientFactory.CreateClient();
-            var followingResponse = await client.GetAsync($"{_userProfileApiUrl}Profile/{profileId}/followinglist");
 
-            if (!followingResponse.IsSuccessStatusCode) {
-                throw new Exception("Error fetching followed users.");
-            }
-
-            var followedUserIds = await followingResponse.Content.ReadFromJsonAsync<List<Guid>>();
-            if (followedUserIds != null && followedUserIds.Count == 0) {
+            // Fetch followed profiles using the token for authorization
+            var followedProfiles = await _userProfileApiProxyService.GetFollowingListAsync(profileId, token);
+            if (followedProfiles == null || followedProfiles.Count == 0) {
                 return response;
             }
-            
-            var reviews = new List<Review>();
-            foreach (var followId in followedUserIds) {
-                var reviewResponse = await client.GetAsync($"{_userProfileApiUrl}Review/{followId}/reviews?page={page}&pageSize={pageSize}");
-                if (reviewResponse.IsSuccessStatusCode) {
-                    var userReviews = await reviewResponse.Content.ReadFromJsonAsync<List<Review>>();
-                    reviews.AddRange(userReviews);
-                }
-            }
-            var detailedReviews = await GetReviewDetailsAsync(reviews);
-            response.TotalCount = detailedReviews.Count;
-            response.Result = detailedReviews.OrderByDescending(r => r.CreatedDate).Take(pageSize).ToList();
+
+            // Fetch reviews from followed profiles
+            var reviews = await GetReviewsFromFollowedProfilesAsync(followedProfiles, token, page, pageSize);
+
+            // Fetch detailed reviews with media info
+            var detailedReviews = await GetReviewDetailsAsync(reviews, token);
+
+            // Map to detailed response format including profile info
+            var detailedProfileReviews = MapToReviewProfileDetails(detailedReviews, followedProfiles);
+
+            response.TotalCount = detailedProfileReviews.Count;
+            response.Result = detailedProfileReviews.OrderByDescending(r => r.CreatedDate).Take(pageSize).ToList();
             return response;
         }
 
-        private async Task<List<ReviewDetail>> GetReviewDetailsAsync(List<Review> reviews) {
+        private async Task<Dictionary<Guid, List<Review>>> GetReviewsFromFollowedProfilesAsync(List<FollowedProfile> followedProfiles, string token, int page, int pageSize) {
+            var reviews = new Dictionary<Guid, List<Review>>();
+            foreach (var profile in followedProfiles) {
+                var userReviews = await _userProfileApiProxyService.GetReviewsAsync(profile.ProfileId.ToString(), page, pageSize, token);
+                reviews[profile.ProfileId] = userReviews;
+            }
+            return reviews;
+        }
+
+        private async Task<List<ReviewDetail>> GetReviewDetailsAsync(Dictionary<Guid, List<Review>> reviews, string token) {
             var reviewDetails = new List<ReviewDetail>();
 
-            foreach (var review in reviews) {
-                var media = await _mediaApiProxyController.GetMediaById(Guid.Parse(review.MediaId));
-                if (media != null) {
-                    var reviewDetail = new ReviewDetail {
-                        Id = review.Id,
-                        Content = review.Content,
-                        Rating = review.Rating,
-                        ProfileId = review.ProfileId,
-                        MediaId = review.MediaId,
-                        CreatedDate = review.CreatedDate,
-                        LastUpdatedDate = review.LastUpdatedDate,
-                        // Fetch additional fields from another API
-                        MediaTitle = media.Title,
-                        MediaType = media.Type,
-                        MediaCachedImagePath = media.CachedImagePath,
-                        MediaCreator = GetCreator(media)
-                    };
+            foreach (var profileAndReviews in reviews) {
+                foreach (var review in profileAndReviews.Value) {
+                    var media = await _mediaApiProxyService.GetMediaByIdAsync(Guid.Parse(review.MediaId), token);
+                    if (media != null) {
+                        var reviewDetail = new ReviewDetail {
+                            Id = review.Id,
+                            Content = review.Content,
+                            Rating = review.Rating,
+                            ProfileId = review.ProfileId,
+                            MediaId = review.MediaId,
+                            CreatedDate = review.CreatedDate,
+                            LastUpdatedDate = review.LastUpdatedDate,
+                            MediaTitle = media.Title,
+                            MediaType = media.Type,
+                            MediaCachedImagePath = media.CachedImagePath,
+                            MediaCreator = GetCreator(media)
+                        };
 
-                    reviewDetails.Add(reviewDetail);
+                        reviewDetails.Add(reviewDetail);
+                    }
                 }
-
             }
-
             return reviewDetails.OrderByDescending(r => r.CreatedDate).ToList();
-
         }
+
+        private List<ReviewProfileDetail> MapToReviewProfileDetails(List<ReviewDetail> detailedReviews, List<FollowedProfile> followedProfiles) {
+            return detailedReviews.Select(detailedReview => new ReviewProfileDetail {
+                Id = detailedReview.Id,
+                Content = detailedReview.Content,
+                Rating = detailedReview.Rating,
+                ProfileId = detailedReview.ProfileId,
+                MediaId = detailedReview.MediaId,
+                CreatedDate = detailedReview.CreatedDate,
+                LastUpdatedDate = detailedReview.LastUpdatedDate,
+                MediaTitle = detailedReview.MediaTitle,
+                MediaType = detailedReview.MediaType,
+                MediaCachedImagePath = detailedReview.MediaCachedImagePath,
+                MediaCreator = detailedReview.MediaCreator,
+                Username = followedProfiles.FirstOrDefault(p => p.ProfileId == detailedReview.ProfileId)?.Username ?? "Unknown"
+            }).ToList();
+        }
+
         private string GetCreator(Media media) {
             return media.Type switch {
                 "film" => media.Director,
@@ -86,11 +105,8 @@ namespace poplensFeedApi.Services {
             };
         }
 
-
         public Task<PageResult<ReviewDetail>> GetForYouFeedAsync(string profileId) {
-            // For You Feed logic to be added later
             throw new NotImplementedException();
         }
     }
-
 }

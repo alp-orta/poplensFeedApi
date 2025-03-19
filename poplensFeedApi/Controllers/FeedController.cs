@@ -1,8 +1,8 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.RazorPages;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using poplensFeedApi.Contracts;
+using poplensFeedApi.Models;
 using poplensFeedApi.Models.Common;
-using poplensUserProfileApi.Models;
 
 namespace poplensFeedApi.Controllers {
     [ApiController]
@@ -14,25 +14,24 @@ namespace poplensFeedApi.Controllers {
             _feedService = feedService;
         }
 
+        [Authorize(AuthenticationSchemes = "Bearer")]
         [HttpGet("GetFollowerFeed/{profileId}")]
-        public async Task<ActionResult<PageResult<ReviewDetail>>> GetFollowerFeed(string profileId, int page = 1, int pageSize = 10) {
-            try {
-                var reviews = await _feedService.GetFollowerFeedAsync(profileId, page, pageSize);
-                return Ok(reviews);
-            } catch (Exception ex) {
-                return BadRequest(new { message = ex.Message });
+        public async Task<ActionResult<PageResult<ReviewProfileDetail>>> GetFollowerFeed(string profileId, int page = 1, int pageSize = 10) {
+            // Extract the token from the incoming request's Authorization header
+            var authHeader = Request.Headers["Authorization"].ToString();
+            if (string.IsNullOrEmpty(authHeader)) {
+                return Unauthorized(new { message = "Authorization token is missing." });
             }
-        }
+            // Remove "Bearer " prefix if present
+            var token = authHeader.Replace("Bearer ", "");
 
-        [HttpGet("for-you/{profileId}")]
-        public async Task<ActionResult<PageResult<ReviewDetail>>> GetForYouFeed(string profileId) {
             try {
-                var reviews = await _feedService.GetForYouFeedAsync(profileId);
+                // Pass the token to the service along with the other parameters
+                var reviews = await _feedService.GetFollowerFeedAsync(profileId, token, page, pageSize);
                 return Ok(reviews);
-            } catch (Exception ex) {
+            } catch (System.Exception ex) {
                 return BadRequest(new { message = ex.Message });
             }
         }
     }
-
 }
