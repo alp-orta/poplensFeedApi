@@ -16,6 +16,7 @@ RUN dotnet publish -c Release -o out
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
 EXPOSE 80
+EXPOSE 8080
 
 # Copy the published output from the build stage
 COPY --from=build /app/out .

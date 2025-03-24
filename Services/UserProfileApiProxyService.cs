@@ -5,11 +5,12 @@ namespace poplensFeedApi.Services {
     public interface IUserProfileApiProxyService {
         Task<List<FollowedProfile>> GetFollowingListAsync(string profileId, string authorizationToken);
         Task<List<Review>> GetReviewsAsync(string profileId, int page, int pageSize, string authorizationToken);
+        Task<List<Review>> GetReviewsByProfileIdsAsync(List<Guid> profileIds, int page, int pageSize, string authorizationToken);
     }
 
     public class UserProfileApiProxyService : IUserProfileApiProxyService {
         private readonly IHttpClientFactory _httpClientFactory;
-        private readonly string _userProfileApiUrl = "https://localhost:7056/api/";
+        private readonly string _userProfileApiUrl = "http://poplensUserProfileApi:8080/api/";
 
         public UserProfileApiProxyService(IHttpClientFactory httpClientFactory) {
             _httpClientFactory = httpClientFactory;
@@ -33,6 +34,14 @@ namespace poplensFeedApi.Services {
         public async Task<List<Review>> GetReviewsAsync(string profileId, int page, int pageSize, string authorizationToken) {
             var client = CreateHttpClientWithAuthorization(authorizationToken);
             var response = await client.GetAsync($"{_userProfileApiUrl}Review/{profileId}/reviews?page={page}&pageSize={pageSize}");
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<List<Review>>();
+        }
+
+        public async Task<List<Review>> GetReviewsByProfileIdsAsync(List<Guid> profileIds, int page, int pageSize, string authorizationToken) {
+            var client = CreateHttpClientWithAuthorization(authorizationToken);
+            var query = $"?page={page}&pageSize={pageSize}&" + string.Join("&", profileIds.Select(id => $"profileIds={id}"));
+            var response = await client.GetAsync($"{_userProfileApiUrl}Review/GetReviewsByProfileIds{query}");
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadFromJsonAsync<List<Review>>();
         }

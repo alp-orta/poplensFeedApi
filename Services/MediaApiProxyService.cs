@@ -8,7 +8,7 @@ namespace poplensFeedApi.Services {
     }
     public class MediaApiProxyService : IMediaApiProxyService {
         private readonly IHttpClientFactory _httpClientFactory;
-        private readonly string _mediaApiUrl = "https://localhost:7207/api/";
+        private readonly string _mediaApiUrl = "http://poplensMediaApi:8080/api/";
 
         public MediaApiProxyService(IHttpClientFactory httpClientFactory) {
             _httpClientFactory = httpClientFactory;

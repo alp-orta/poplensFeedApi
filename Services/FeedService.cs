@@ -28,8 +28,11 @@ namespace poplensFeedApi.Services {
                 return response;
             }
 
-            // Fetch reviews from followed profiles
-            var reviews = await GetReviewsFromFollowedProfilesAsync(followedProfiles, token, page, pageSize);
+            // Extract profile IDs from followed profiles
+            var profileIds = followedProfiles.Select(p => p.ProfileId).ToList();
+
+            // Fetch reviews from followed profiles using the new method
+            var reviews = await _userProfileApiProxyService.GetReviewsByProfileIdsAsync(profileIds, page, pageSize, token);
 
             // Fetch detailed reviews with media info
             var detailedReviews = await GetReviewDetailsAsync(reviews, token);
@@ -42,38 +45,27 @@ namespace poplensFeedApi.Services {
             return response;
         }
 
-        private async Task<Dictionary<Guid, List<Review>>> GetReviewsFromFollowedProfilesAsync(List<FollowedProfile> followedProfiles, string token, int page, int pageSize) {
-            var reviews = new Dictionary<Guid, List<Review>>();
-            foreach (var profile in followedProfiles) {
-                var userReviews = await _userProfileApiProxyService.GetReviewsAsync(profile.ProfileId.ToString(), page, pageSize, token);
-                reviews[profile.ProfileId] = userReviews;
-            }
-            return reviews;
-        }
-
-        private async Task<List<ReviewDetail>> GetReviewDetailsAsync(Dictionary<Guid, List<Review>> reviews, string token) {
+        private async Task<List<ReviewDetail>> GetReviewDetailsAsync(List<Review> reviews, string token) {
             var reviewDetails = new List<ReviewDetail>();
 
-            foreach (var profileAndReviews in reviews) {
-                foreach (var review in profileAndReviews.Value) {
-                    var media = await _mediaApiProxyService.GetMediaByIdAsync(Guid.Parse(review.MediaId), token);
-                    if (media != null) {
-                        var reviewDetail = new ReviewDetail {
-                            Id = review.Id,
-                            Content = review.Content,
-                            Rating = review.Rating,
-                            ProfileId = review.ProfileId,
-                            MediaId = review.MediaId,
-                            CreatedDate = review.CreatedDate,
-                            LastUpdatedDate = review.LastUpdatedDate,
-                            MediaTitle = media.Title,
-                            MediaType = media.Type,
-                            MediaCachedImagePath = media.CachedImagePath,
-                            MediaCreator = GetCreator(media)
-                        };
+            foreach (var review in reviews) {
+                var media = await _mediaApiProxyService.GetMediaByIdAsync(Guid.Parse(review.MediaId), token);
+                if (media != null) {
+                    var reviewDetail = new ReviewDetail {
+                        Id = review.Id,
+                        Content = review.Content,
+                        Rating = review.Rating,
+                        ProfileId = review.ProfileId,
+                        MediaId = review.MediaId,
+                        CreatedDate = review.CreatedDate,
+                        LastUpdatedDate = review.LastUpdatedDate,
+                        MediaTitle = media.Title,
+                        MediaType = media.Type,
+                        MediaCachedImagePath = media.CachedImagePath,
+                        MediaCreator = GetCreator(media)
+                    };
 
-                        reviewDetails.Add(reviewDetail);
-                    }
+                    reviewDetails.Add(reviewDetail);
                 }
             }
             return reviewDetails.OrderByDescending(r => r.CreatedDate).ToList();
