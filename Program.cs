@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using poplensFeedApi.Contracts;
+using poplensFeedApi.Data;
 using poplensFeedApi.Services;
 using System.Text;
 
@@ -12,6 +14,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+// Add DbContext to the services
+builder.Services.AddDbContext<FeedDbContext>(options =>
+    options.UseNpgsql("Host=postgresFeed;Port=5432;Username=postgre;Password=postgre;Database=Feed"));
 
 
 builder.Services.AddScoped<IFeedService, FeedService>();
@@ -44,6 +49,10 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope()) {
+    var dbContext = scope.ServiceProvider.GetRequiredService<FeedDbContext>();
+    dbContext.Database.Migrate(); // This applies any pending migrations
+}
 app.UseSwagger();
 app.UseSwaggerUI();
 
