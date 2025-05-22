@@ -49,10 +49,10 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope()) {
-    var dbContext = scope.ServiceProvider.GetRequiredService<FeedDbContext>();
-    dbContext.Database.Migrate(); // This applies any pending migrations
-}
+//using (var scope = app.Services.CreateScope()) {
+//    var dbContext = scope.ServiceProvider.GetRequiredService<FeedDbContext>();
+//    dbContext.Database.Migrate(); // This applies any pending migrations
+//}
 app.UseSwagger();
 app.UseSwaggerUI();
 

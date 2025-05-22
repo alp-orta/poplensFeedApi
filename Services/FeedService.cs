@@ -160,7 +160,8 @@ namespace poplensFeedApi.Services {
 
                 // 5. Get reviews with embeddings similar to the taste profile, excluding already displayed reviews
                 var similarReviews = await _userProfileApiProxyService.GetSimilarReviewsAsync(
-                    aggregatedEmbedding, pageSize, token, displayedReviewIds);
+                    aggregatedEmbedding, pageSize, token, displayedReviewIds, profileGuid);
+
 
                 // 6. Record these reviews as displayed to the user
                 await AddDisplayedReviewsAsync(profileGuid, similarReviews.Select(r => r.Id).ToList());

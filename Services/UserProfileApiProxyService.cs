@@ -1,7 +1,10 @@
-﻿using Pgvector;
+﻿using poplensFeedApi.Models.Feed;
+using Pgvector;
+using poplensFeedApi.Helpers;
 using poplensFeedApi.Models;
 using poplensUserProfileApi.Models;
 using System.Net.Http.Headers;
+using System.Text.Json;
 
 namespace poplensFeedApi.Services {
     public interface IUserProfileApiProxyService {
@@ -12,7 +15,7 @@ namespace poplensFeedApi.Services {
         Task<List<Review>> GetReviewsWithEmbeddingsAsync(string profileId, string authorizationToken);
         Task<List<Review>> GetLikedReviewsWithEmbeddingsAsync(string profileId, string authorizationToken);
         Task<List<Review>> GetCommentedReviewsWithEmbeddingsAsync(string profileId, string authorizationToken);
-        Task<List<Review>> GetSimilarReviewsAsync(Vector embedding, int count, string authorizationToken, List<Guid>? excludedReviewIds = null);
+        Task<List<Review>> GetSimilarReviewsAsync(Vector embedding, int count, string authorizationToken, List<Guid>? excludedReviewIds = null, Guid? requestingProfileId = null);
         Task<UserInteractionsResponse> GetUserInteractionsWithEmbeddingsAsync(string profileId, string authorizationToken);
 
     }
@@ -67,46 +70,59 @@ namespace poplensFeedApi.Services {
             var client = CreateHttpClientWithAuthorization(authorizationToken);
             var response = await client.GetAsync($"{_userProfileApiUrl}Review/{profileId}/GetReviewsWithEmbeddings");
             response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<List<Review>>();
+            return await response.Content.ReadFromJsonAsync<List<Review>>(_jsonOptions);
         }
 
         public async Task<List<Review>> GetLikedReviewsWithEmbeddingsAsync(string profileId, string authorizationToken) {
             var client = CreateHttpClientWithAuthorization(authorizationToken);
             var response = await client.GetAsync($"{_userProfileApiUrl}Review/{profileId}/GetLikedReviewsWithEmbeddings");
             response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<List<Review>>();
+            return await response.Content.ReadFromJsonAsync<List<Review>>(_jsonOptions);
         }
 
         public async Task<List<Review>> GetCommentedReviewsWithEmbeddingsAsync(string profileId, string authorizationToken) {
             var client = CreateHttpClientWithAuthorization(authorizationToken);
             var response = await client.GetAsync($"{_userProfileApiUrl}Review/{profileId}/GetCommentedReviewsWithEmbeddings");
             response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<List<Review>>();
+            return await response.Content.ReadFromJsonAsync<List<Review>>(_jsonOptions);
         }
 
-        // In UserProfileApiProxyService.cs implementation:
-        public async Task<List<Review>> GetSimilarReviewsAsync(Vector embedding, int count, string authorizationToken, List<Guid>? excludedReviewIds = null) {
+        public async Task<List<Review>> GetSimilarReviewsAsync(
+            Vector embedding,
+            int count,
+            string authorizationToken,
+            List<Guid>? excludedReviewIds = null,
+            Guid? requestingProfileId = null) 
+        {
             var client = CreateHttpClientWithAuthorization(authorizationToken);
-
-            // Convert the embedding to a float array for JSON serialization
             var embeddingArray = embedding.ToArray();
 
-            var content = JsonContent.Create(new {
-                embedding = embeddingArray,
-                count = count,
-                excludedReviewIds = excludedReviewIds ?? new List<Guid>()
+            var content = JsonContent.Create(new SimilarReviewRequest {
+                Embedding = embeddingArray,
+                Count = count,
+                ExcludedReviewIds = excludedReviewIds ?? new List<Guid>(),
+                RequestingProfileId = requestingProfileId
             });
 
             var response = await client.PostAsync($"{_userProfileApiUrl}Review/GetSimilarReviews", content);
             response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<List<Review>>();
+            return await response.Content.ReadFromJsonAsync<List<Review>>(_jsonOptions);
         }
+
+
 
         public async Task<UserInteractionsResponse> GetUserInteractionsWithEmbeddingsAsync(string profileId, string authorizationToken) {
             var client = CreateHttpClientWithAuthorization(authorizationToken);
             var response = await client.GetAsync($"{_userProfileApiUrl}Review/{profileId}/GetUserInteractions");
             response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<UserInteractionsResponse>();
+            return await response.Content.ReadFromJsonAsync<UserInteractionsResponse>(_jsonOptions);
+        }
+
+        private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions {
+            PropertyNameCaseInsensitive = true,
+        };
+        static UserProfileApiProxyService() {
+            _jsonOptions.Converters.Add(new VectorJsonConverter());
         }
 
     }
