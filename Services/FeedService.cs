@@ -300,5 +300,118 @@ namespace poplensFeedApi.Services {
             }
         }
 
+        public async Task<List<Media>> GetMediaRecommendationsForUserAsync(string profileId, string token, int pageSize = 3, string mediaType = null) {
+            Console.WriteLine($"[GetMediaRecommendationsForUserAsync] Called with profileId={profileId}, pageSize={pageSize}, mediaType={mediaType}");
+
+            var profileGuid = Guid.Parse(profileId);
+
+            // 1. Get user interactions
+            var userInteractions = await _userProfileApiProxyService.GetUserInteractionsWithEmbeddingsAsync(profileId, token);
+            Console.WriteLine($"[GetMediaRecommendationsForUserAsync] Retrieved user interactions: Own={userInteractions.OwnReviews?.Count ?? 0}, Liked={userInteractions.LikedReviews?.Count ?? 0}, Commented={userInteractions.CommentedReviews?.Count ?? 0}");
+
+            // 2. Collect all unique media IDs from user interactions
+            var allReviews = new List<Review>();
+            if (userInteractions.OwnReviews != null) allReviews.AddRange(userInteractions.OwnReviews);
+            if (userInteractions.LikedReviews != null) allReviews.AddRange(userInteractions.LikedReviews);
+            if (userInteractions.CommentedReviews != null) allReviews.AddRange(userInteractions.CommentedReviews);
+
+            var interactedMediaIds = allReviews
+                .Where(r => !string.IsNullOrEmpty(r.MediaId))
+                .Select(r => Guid.Parse(r.MediaId))
+                .Distinct()
+                .ToList();
+
+            Console.WriteLine($"[GetMediaRecommendationsForUserAsync] Interacted media IDs count: {interactedMediaIds.Count}");
+
+            if (interactedMediaIds.Count == 0) {
+                Console.WriteLine("[GetMediaRecommendationsForUserAsync] No interacted media found, returning empty list.");
+                return new List<Media>();
+            }
+
+            // 3. Fetch media objects and their embeddings
+            var mediaList = await Task.WhenAll(interactedMediaIds.Select(id => _mediaApiProxyService.GetMediaWithEmbeddingById(id, token)));
+            Console.WriteLine($"[GetMediaRecommendationsForUserAsync] Fetched media with embeddings: {mediaList.Count(m => m != null)}");
+
+            var weightedEmbeddings = new List<(Vector Embedding, float Weight)>();
+
+            // 4. Assign weights (similar to ForYou feed)
+            const float OwnReviewWeight = 1.0f;
+            const float CommentedReviewWeight = 0.7f;
+            const float LikedReviewWeight = 0.3f;
+            const float MinTimeFactor = 0.7f;
+            const float MaxTimeFactor = 1.0f;
+            TimeSpan maxAgeForFullWeight = TimeSpan.FromDays(30);
+
+            foreach (var review in userInteractions.OwnReviews.Where(r => r.MediaId != null)) {
+                var media = mediaList.FirstOrDefault(m => m != null && m.Id == Guid.Parse(review.MediaId));
+                if (media?.Embedding != null) {
+                    float timeFactor = CalculateTimeFactor(review.CreatedDate, MinTimeFactor, MaxTimeFactor, maxAgeForFullWeight);
+                    weightedEmbeddings.Add((media.Embedding, OwnReviewWeight * timeFactor));
+                }
+            }
+            foreach (var review in userInteractions.CommentedReviews.Where(r => r.MediaId != null)) {
+                var media = mediaList.FirstOrDefault(m => m != null && m.Id == Guid.Parse(review.MediaId));
+                if (media?.Embedding != null) {
+                    float timeFactor = CalculateTimeFactor(review.CreatedDate, MinTimeFactor, MaxTimeFactor, maxAgeForFullWeight);
+                    weightedEmbeddings.Add((media.Embedding, CommentedReviewWeight * timeFactor));
+                }
+            }
+            foreach (var review in userInteractions.LikedReviews.Where(r => r.MediaId != null)) {
+                var media = mediaList.FirstOrDefault(m => m != null && m.Id == Guid.Parse(review.MediaId));
+                if (media?.Embedding != null) {
+                    float timeFactor = CalculateTimeFactor(review.CreatedDate, MinTimeFactor, MaxTimeFactor, maxAgeForFullWeight);
+                    weightedEmbeddings.Add((media.Embedding, LikedReviewWeight * timeFactor));
+                }
+            }
+
+            Console.WriteLine($"[GetMediaRecommendationsForUserAsync] Weighted embeddings count: {weightedEmbeddings.Count}");
+
+            if (weightedEmbeddings.Count == 0) {
+                Console.WriteLine("[GetMediaRecommendationsForUserAsync] No weighted embeddings, returning empty list.");
+                return new List<Media>();
+            }
+
+            // 5. Aggregate embeddings
+            var userTasteEmbedding = AggregateWeightedEmbeddings(weightedEmbeddings);
+            var arr = userTasteEmbedding.ToArray();
+            Console.WriteLine($"[GetMediaRecommendationsForUserAsync] Aggregated user taste embedding: {(userTasteEmbedding != null ? "exists" : "null")}");
+            if (arr != null && arr.Length > 0)
+                Console.WriteLine($"[GetSimilarMediaAsync] Embedding sample: [{string.Join(", ", arr.Take(5))}...]");
+            // 6. Get already suggested media
+            var displayedMediaIds = await _dbContext.DisplayedReviews
+                .Where(dr => dr.ProfileId == profileGuid)
+                .Select(dr => dr.ReviewId)
+                .ToListAsync();
+
+            Console.WriteLine($"[GetMediaRecommendationsForUserAsync] Displayed media IDs count: {displayedMediaIds.Count}");
+
+            // 7. Get similar media from proxy
+            var similarMedia = await _mediaApiProxyService.GetSimilarMediaAsync(
+                userTasteEmbedding, pageSize, token, mediaType, interactedMediaIds.Concat(displayedMediaIds).ToList());
+
+            Console.WriteLine($"[GetMediaRecommendationsForUserAsync] Similar media found: {similarMedia.Count}");
+
+            // 8. Record these media as displayed
+            if (similarMedia.Count > 0) {
+                var now = DateTime.UtcNow;
+                var displayed = similarMedia.Select(m => new DisplayedReview {
+                    ProfileId = profileGuid,
+                    ReviewId = m.Id,
+                    DisplayedAt = now
+                }).ToList();
+
+                await _dbContext.DisplayedReviews.AddRangeAsync(displayed);
+                await _dbContext.SaveChangesAsync();
+
+                Console.WriteLine($"[GetMediaRecommendationsForUserAsync] Recorded {displayed.Count} media as displayed.");
+            } else {
+                Console.WriteLine("[GetMediaRecommendationsForUserAsync] No new media to record as displayed.");
+            }
+
+            return similarMedia;
+        }
+
+
+
     }
 }

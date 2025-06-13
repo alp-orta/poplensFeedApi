@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using poplensFeedApi.Contracts;
 using poplensFeedApi.Models;
 using poplensFeedApi.Models.Common;
+using poplensMediaApi.Models;
 
 namespace poplensFeedApi.Controllers {
     [ApiController]
@@ -53,6 +54,29 @@ namespace poplensFeedApi.Controllers {
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpGet("GetMediaRecommendations/{profileId}")]
+        public async Task<ActionResult<List<Media>>> GetMediaRecommendations(
+                string profileId,
+                int pageSize = 3,
+                string? mediaType = null) {
+            // Extract the token from the incoming request's Authorization header
+            var authHeader = Request.Headers["Authorization"].ToString();
+            if (string.IsNullOrEmpty(authHeader)) {
+                return Unauthorized(new { message = "Authorization token is missing." });
+            }
+            // Remove "Bearer " prefix if present
+            var token = authHeader.Replace("Bearer ", "");
+
+            try {
+                var recommendations = await _feedService.GetMediaRecommendationsForUserAsync(profileId, token, pageSize, mediaType);
+                return Ok(recommendations);
+            } catch (Exception ex) {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
 
     }
 }

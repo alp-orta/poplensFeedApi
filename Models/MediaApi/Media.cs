@@ -1,4 +1,6 @@
-﻿namespace poplensMediaApi.Models {
+﻿using Pgvector;
+
+namespace poplensMediaApi.Models {
     public class Media {
         /// <summary>
         /// Our unique identifier
@@ -64,6 +66,10 @@
         /// Last Updated Date for the db record
         /// </summary>
         public DateTime LastUpdatedDate { get; set; }
+        /// <summary>
+        /// Embedding
+        /// </summary>
+        public Vector? Embedding { get; set; }
     }
 
 }
